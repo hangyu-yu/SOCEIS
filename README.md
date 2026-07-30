@@ -39,6 +39,27 @@ The graphical interface is built on [DearPyGui](https://github.com/hoffstadt/Dea
 
 ---
 
+## Video Tutorials — EISAP Online Workshop
+
+A screen-recorded workshop walks through the complete EISAP workflow, module by module. Available on both YouTube and Bilibili.
+
+### YouTube
+
+| Part | Topic | Link |
+|------|-------|------|
+| 00 | Introduction | https://www.youtube.com/watch?v=0TuiiYdWqwQ |
+| 01 | Home Page | https://www.youtube.com/watch?v=HCNXBn8cYgY |
+| 02 | EIS process | https://www.youtube.com/watch?v=3ytxhS7ZUVk |
+| 03 | DRT process | https://www.youtube.com/watch?v=Ijnkk59vP7w |
+| 04 | CNLS fit | https://www.youtube.com/watch?v=ic3iRRlcT7I |
+| 05 | Data viewer | https://www.youtube.com/watch?v=Th5FthqK77c |
+
+### Bilibili
+
+Full playlist: https://www.bilibili.com/video/BV1PX3J6fEnN/
+
+---
+
 ## Installation
 
 ### Option 1 — pip (recommended)
