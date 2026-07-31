@@ -22,7 +22,7 @@ class UpdateManager:
             app_root: 应用程序根目录
         """
         self.repo_owner = 'hangyu-yu'
-        self.repo_name = 'SOCEIS'
+        self.repo_name = 'EISAP'
         self.current_version = current_version
         self.app_root = Path(app_root)
         self.latest_version = None

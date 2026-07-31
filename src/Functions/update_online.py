@@ -112,7 +112,7 @@ def _sync_tree(source_root, target_root, keep_paths):
             shutil.rmtree(target_dir, ignore_errors=True)
 
 
-def run_online_update(app_root, repo_owner="hangyu-yu", repo_name="SOCEIS", keep_paths=None):
+def run_online_update(app_root, repo_owner="hangyu-yu", repo_name="EISAP", keep_paths=None):
     """
     Download latest default-branch source and mirror into app_root.
 
@@ -148,8 +148,8 @@ def run_online_update(app_root, repo_owner="hangyu-yu", repo_name="SOCEIS", keep
             return False, "Update package structure is invalid."
 
         source_root = _decode_windows_zip_path(extracted_roots[0])
-        if not Path(_normalize_path(source_root / "SOCEIS.py")).exists() or not Path(_normalize_path(source_root / "src")).exists():
-            return False, "Downloaded package does not look like SOCEIS project."
+        if not Path(_normalize_path(source_root / "EISAP.py")).exists() or not Path(_normalize_path(source_root / "src")).exists():
+            return False, "Downloaded package does not look like EISAP project."
 
         _sync_tree(source_root=source_root, target_root=app_root, keep_paths=keep_paths)
         return True, f"Update completed from branch '{branch}'."

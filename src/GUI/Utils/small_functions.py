@@ -742,7 +742,7 @@ def font_size_confirm_callback(sender, app_data, config, font_path_medium, font_
 
     current_file = os.path.abspath(__file__)
     parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
-    target_file = os.path.join(parent_dir, "SOCEIS.py")
+    target_file = os.path.join(parent_dir, "EISAP.py")
     if os.name == 'nt':  # Windows
         import subprocess
         subprocess.Popen([sys.executable, target_file], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
@@ -775,7 +775,7 @@ def restart_application_after_update():
     """Restart SOCEIS in a new process, preserving terminal window."""
     current_file = os.path.abspath(__file__)
     parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
-    target_file = os.path.join(parent_dir, "SOCEIS.py")
+    target_file = os.path.join(parent_dir, "EISAP.py")
 
     if os.name == 'nt':
         import subprocess
@@ -847,7 +847,7 @@ def _online_update_worker(state_holder):
         success, message = updater_module.run_online_update(
             app_root=repo_root,
             repo_owner="hangyu-yu",
-            repo_name="SOCEIS",
+            repo_name="EISAP",
             keep_paths=[Path("src/GUI/config.json"), Path("Projects")]
         )
     except Exception as exc:
@@ -885,7 +885,7 @@ def start_online_update_callback(sender, app_data, config):
         dpg.delete_item("window_update_confirm")
 
     with dpg.window(label="Update from GitHub", tag="window_update_confirm", modal=True, width=640, height=320):
-        dpg.add_text("This action will sync project files from github.com/hangyu-yu/SOCEIS.")
+        dpg.add_text("This action will sync project files from github.com/hangyu-yu/EISAP.")
         dpg.add_text("All local files will be replaced except src/GUI/config.json and Projects folder.")
         dpg.add_separator()
         dpg.add_text("Continue?")
