@@ -2,6 +2,23 @@ import os
 import numpy as np
 import dearpygui.dearpygui as dpg
 import src.GUI.Utils as gui_utils
+import src.GUI.Utils.cnls_curvefit as cf_engine
+
+
+_CF_SHADE_THEME = None
+
+
+def _cf_shade_theme():
+    """Cached translucent theme for the CF confidence-band shade series."""
+    global _CF_SHADE_THEME
+    if _CF_SHADE_THEME is not None and dpg.does_item_exist(_CF_SHADE_THEME):
+        return _CF_SHADE_THEME
+    with dpg.theme() as theme:
+        with dpg.theme_component(dpg.mvShadeSeries):
+            dpg.add_theme_color(dpg.mvPlotCol_Fill, (70, 130, 180, 60), category=dpg.mvThemeCat_Plots)
+            dpg.add_theme_color(dpg.mvPlotCol_Line, (70, 130, 180, 60), category=dpg.mvThemeCat_Plots)
+    _CF_SHADE_THEME = theme
+    return theme
 
 
 def _sanitize_log_xy(x, y, keep_decades=18):
@@ -435,6 +452,7 @@ def update_all_plots(config):
 
         name_list = [element['name'] for element in CNLS_tmp.Elements]
         valid_element_tabs = set()
+        cf_x = bool(config.store.get('cf_x_index', False))
 
         if config.fix_all_plots_CNLS:
             source_files = [os.path.basename(file_name) for file_name in config.file_list]
@@ -485,9 +503,10 @@ def update_all_plots(config):
                 dpg.delete_item(param_tab, children_only=True)
                 with dpg.group(parent=param_tab):
                     with dpg.plot(tag=f"plot_cnls_all_{param}", width=-1, height=-1, no_menus=False):
-                        x_axis = dpg.add_plot_axis(dpg.mvXAxis, label="Measurements", log_scale=False)
+                        x_axis = dpg.add_plot_axis(dpg.mvXAxis, label="x index" if cf_x else "Measurements", log_scale=False)
                         y_axis = dpg.add_plot_axis(dpg.mvYAxis, label=y_label)
 
+                        x_index_list = []
                         for file_name in source_files:
                             file_key = os.path.splitext(file_name)[0]
                             if file_key not in config.store or 'CNLS' not in config.store[file_key]:
@@ -501,13 +520,47 @@ def update_all_plots(config):
                             value = cnls_file.ElementsParamValues[para_idx]
                             file_name_list.append(gui_utils.small_functions.string_abbreviation(file_key, 3, 5))
                             data_list.append(value)
+                            x_index_list.append(float(config.file_values.get(os.path.basename(file_name), 0.0)))
                             y_min_value = np.min([y_min_value, value])
                             y_max_value = np.max([y_max_value, value])
 
-                        x_data = list(range(1, len(file_name_list) + 1))
-                        label_pairs = tuple(zip(file_name_list, x_data))
-                        dpg.add_line_series(x_data, data_list, parent=y_axis)
-                        dpg.add_scatter_series(x_data, data_list, parent=y_axis)
+                        if cf_x:
+                            # Points only (no connecting line); x-axis = per-file x index.
+                            dpg.add_scatter_series(x_index_list, data_list, parent=y_axis)
+                            fit = config.store.get('cf_fits', {}).get(param)
+                            if fit and fit.get('ok') and len(x_index_list) >= 2:
+                                x_lo, x_hi = min(x_index_list), max(x_index_list)
+                                if x_hi > x_lo:
+                                    xs = np.linspace(x_lo, x_hi, 100)
+                                    yhat, ylo, yhi = cf_engine.evaluate(fit, xs)
+                                    line_mask = np.isfinite(yhat)
+                                    band_mask = line_mask & np.isfinite(ylo) & np.isfinite(yhi)
+                                    # Shade the CI band only where it is defined (a
+                                    # degenerate covariance yields a NaN band).
+                                    if np.any(band_mask):
+                                        xb = xs[band_mask]
+                                        shade = dpg.add_shade_series(xb.tolist(), yhi[band_mask].tolist(), y2=ylo[band_mask].tolist(), parent=y_axis, label="95% CI")
+                                        dpg.bind_item_theme(shade, _cf_shade_theme())
+                                        y_min_value = np.min([y_min_value, float(np.min(ylo[band_mask]))])
+                                        y_max_value = np.max([y_max_value, float(np.max(yhi[band_mask]))])
+                                    # Always draw the fit curve itself where finite.
+                                    if np.any(line_mask):
+                                        xl = xs[line_mask]
+                                        dpg.add_line_series(xl.tolist(), yhat[line_mask].tolist(), parent=y_axis, label=fit.get('method', 'Fit'))
+                                        dpg.add_plot_legend()
+                                        y_min_value = np.min([y_min_value, float(np.min(yhat[line_mask]))])
+                                        y_max_value = np.max([y_max_value, float(np.max(yhat[line_mask]))])
+                            if x_index_list:
+                                x_span = (max(x_index_list) - min(x_index_list)) or 1.0
+                                dpg.set_axis_limits(x_axis, min(x_index_list) - 0.05 * x_span, max(x_index_list) + 0.05 * x_span)
+                        else:
+                            x_data = list(range(1, len(file_name_list) + 1))
+                            label_pairs = tuple(zip(file_name_list, x_data))
+                            dpg.add_line_series(x_data, data_list, parent=y_axis)
+                            dpg.add_scatter_series(x_data, data_list, parent=y_axis)
+                            dpg.set_axis_limits(x_axis, 0, len(file_name_list) + 1)
+                            dpg.set_axis_ticks(x_axis, label_pairs)
+
                         # Pad additively so negative values (e.g. negative resistance)
                         # are enclosed; multiplicative padding on a negative minimum
                         # would raise the lower bound toward zero and clip the curve.
@@ -516,8 +569,6 @@ def update_all_plots(config):
                         y_low = y_min_value - pad if y_min_value < 0 else 0.0
                         y_high = y_max_value + pad if y_max_value > 0 else pad
                         dpg.set_axis_limits(y_axis, y_low, y_high)
-                        dpg.set_axis_limits(x_axis, 0, len(file_name_list) + 1)
-                        dpg.set_axis_ticks(x_axis, label_pairs)
 
             # Remove stale parameter tabs if definitions changed.
             tab_children = dpg.get_item_children(param_tab_bar)

@@ -17,6 +17,24 @@ def _normalize_path(path_obj):
     return path_str
 
 
+def parse_start_step(text):
+    """Parse MATLAB-style 'start:step' (or 'start:step:stop', stop ignored).
+
+    Returns (start, step) as floats, or None if the text cannot be parsed.
+    """
+    if not isinstance(text, str):
+        return None
+    parts = [p.strip() for p in text.split(":")]
+    if len(parts) not in (2, 3):
+        return None
+    try:
+        start = float(parts[0])
+        step = float(parts[1])
+    except ValueError:
+        return None
+    return start, step
+
+
 def _open_import_progress(total_steps):
     """Thin wrapper: open a progress window for historical data import."""
     import src.GUI.Utils.progress_modal as _pm
@@ -216,6 +234,7 @@ def _open_large_file_select_window(config, tag, EIS=None, CNLS=None):
     window_tag = f"window_large_file_selector_{tag}"
     list_child_tag = f"child_large_selector_list_{tag}"
     index_input_tag = f"input_large_selector_index_{tag}"
+    autofill_input_tag = f"input_large_selector_autofill_{tag}"
 
     if dpg.does_item_exist(window_tag):
         dpg.delete_item(window_tag)
@@ -272,6 +291,10 @@ def _open_large_file_select_window(config, tag, EIS=None, CNLS=None):
         if not config.selected_files:
             config.store["_skip_autoselect_first_once"] = True
 
+        # Capture per-file numeric values (all rows) and persist to folder config.
+        _persist_file_values()
+        config.save_config()
+
         update_file_list(config, tag, EIS, CNLS)
         # Reuse standard selection callback to update display file and redraw all related plots.
         update_selected_files(config, tag, force_refresh=True)
@@ -325,12 +348,38 @@ def _open_large_file_select_window(config, tag, EIS=None, CNLS=None):
             dpg.set_value(index_input_tag, "")
         _update_temp_selected_from_window()
 
+    def _apply_auto_fill():
+        """Assign start + i*step to checked files in list order (i resets from 0)."""
+        raw_text = dpg.get_value(autofill_input_tag) if dpg.does_item_exist(autofill_input_tag) else ""
+        spec = parse_start_step(raw_text)
+        if spec is None:
+            return
+        start, step = spec
+        i = 0
+        for filename in current_file_names:
+            cb_tag = f"checkbox_large_selector_{tag}_{filename}"
+            val_tag = f"input_large_selector_value_{tag}_{filename}"
+            if dpg.does_item_exist(cb_tag) and dpg.get_value(cb_tag):
+                if dpg.does_item_exist(val_tag):
+                    dpg.set_value(val_tag, start + i * step)
+                i += 1
+
+    def _persist_file_values():
+        """Read every row's value input into config.file_values (all rows)."""
+        for filename in current_file_names:
+            val_tag = f"input_large_selector_value_{tag}_{filename}"
+            if dpg.does_item_exist(val_tag):
+                try:
+                    config.file_values[filename] = float(dpg.get_value(val_tag))
+                except (TypeError, ValueError):
+                    continue
+
     vp_w = dpg.get_viewport_client_width() if hasattr(dpg, "get_viewport_client_width") else dpg.get_viewport_width()
     vp_h = dpg.get_viewport_client_height() if hasattr(dpg, "get_viewport_client_height") else dpg.get_viewport_height()
     win_width  = max(480, int(vp_w * 0.9))
     win_height = max(360, int(vp_h * 0.9))
-    # Bottom panel holds: spacer + index row + select-all row + spacer + separator + confirm row + inner padding
-    _bottom_h = 125
+    # Bottom panel holds: spacer + index row + value row + select-all row + spacer + separator + confirm row + inner padding
+    _bottom_h = 158
 
     with dpg.window(
         label="Large File Selector",
@@ -344,16 +393,31 @@ def _open_large_file_select_window(config, tag, EIS=None, CNLS=None):
     ):
         dpg.add_text("Select files from current available list, then confirm to apply.")
         dpg.add_separator()
+        # ── Column header (fixed, above the scrollable list) ──────────
+        with dpg.group(horizontal=True):
+            dpg.add_text("x index")
+            dpg.add_spacer(width=48)
+            dpg.add_text("File")
+        dpg.add_separator()
         # ── Scrollable file list ──────────────────────────────────────
         with dpg.child_window(tag=list_child_tag, width=-1, height=-_bottom_h, horizontal_scrollbar=True):
             for filename in current_file_names:
                 default_checked = filename in (config.selected_files or [])
-                dpg.add_checkbox(
-                    label=filename,
-                    tag=f"checkbox_large_selector_{tag}_{filename}",
-                    default_value=default_checked,
-                    callback=lambda s, a: _update_temp_selected_from_window()
-                )
+                with dpg.group(horizontal=True):
+                    dpg.add_input_float(
+                        tag=f"input_large_selector_value_{tag}_{filename}",
+                        default_value=float(config.file_values.get(filename, 0.0)),
+                        width=90,
+                        step=0,
+                        step_fast=0,
+                        format="%.6g",
+                    )
+                    dpg.add_checkbox(
+                        label=filename,
+                        tag=f"checkbox_large_selector_{tag}_{filename}",
+                        default_value=default_checked,
+                        callback=lambda s, a: _update_temp_selected_from_window()
+                    )
         # ── Fixed bottom controls panel ───────────────────────────────
         with dpg.child_window(width=-1, height=_bottom_h, no_scrollbar=True, border=True):
             dpg.add_spacer(height=4)
@@ -371,6 +435,17 @@ def _open_large_file_select_window(config, tag, EIS=None, CNLS=None):
             with dpg.group(horizontal=True):
                 dpg.add_button(label="Select all", callback=lambda: _set_all_large_selector(True))
                 dpg.add_button(label="Unselect all", callback=lambda: _set_all_large_selector(False, clear_index=True))
+            with dpg.group(horizontal=True):
+                dpg.add_text("Value")
+                dpg.add_input_text(
+                    tag=autofill_input_tag,
+                    hint="e.g. 0:0.2",
+                    width=140,
+                    on_enter=True,
+                    callback=lambda s, a: _apply_auto_fill(),
+                )
+                dpg.add_button(label="Auto fill", callback=lambda: _apply_auto_fill())
+                dpg.add_text("(checked files, start:step)")
             dpg.add_spacer(height=6)
             dpg.add_separator()
             dpg.add_spacer(height=6)

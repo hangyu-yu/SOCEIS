@@ -210,6 +210,10 @@ def gui_tab_cnls(config, EIS, CNLS):
                                 default_value = bool(getattr(config.store[os.path.splitext(config.display_file)[0]]['CNLS'], 'Rs_LB_DRT', False)) if gui_utils.cnls_functions._file_existence_check(config) else False,
                                 callback=lambda sender, app_data: rs_lb_drt_callback(sender, app_data, config),
                             )
+                            dpg.add_menu_item(
+                                label="CF option",
+                                callback=lambda s, a: gui_utils.cnls_cf.open_cf_window(config),
+                            )
                         with dpg.menu(label="Add elements"):
                             dpg.add_menu_item(
                                 label="Selector",

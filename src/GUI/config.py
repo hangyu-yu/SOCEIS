@@ -37,6 +37,8 @@ class Config:
         self.file_list = []
         # Selected file paths
         self.selected_files = []
+        # Per-file numeric values (basename -> float), default 0.0
+        self.file_values = {}
         # Displayed file name
         self.display_file = ""
         # Select data import functino
@@ -90,6 +92,24 @@ class Config:
             return [value.strip()]
         return []
 
+    def _coerce_file_values(self, value):
+        """Coerce a raw file-values map to {basename: float}, dropping bad entries."""
+        if not isinstance(value, dict):
+            return {}
+        result = {}
+        for key, raw in value.items():
+            name = os.path.basename(str(key)).strip()
+            if not name:
+                continue
+            try:
+                number = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if number != number or number in (float("inf"), float("-inf")):  # NaN/inf guard
+                continue
+            result[name] = number
+        return result
+
     def _default_config_dict(self, folder_path=None):
         folder = folder_path or self.folder_path
         return {
@@ -97,6 +117,7 @@ class Config:
             "folder_path": folder,
             "file_list": [],
             "selected_files": [],
+            "file_values": {},
             "file_extensions": self.supported_file_extensions[0],
             "display_file": "",
             "data_import_function": self.default_data_import_function,
@@ -154,11 +175,14 @@ class Config:
         else:
             data_import_function = defaults["data_import_function"]
 
+        file_values = self._coerce_file_values(data.get("file_values", defaults["file_values"]))
+
         return {
             "font_size": font_size,
             "folder_path": folder_path,
             "file_list": file_list,
             "selected_files": selected_files,
+            "file_values": file_values,
             "file_extensions": file_extensions,
             "display_file": display_file,
             "data_import_function": data_import_function,
@@ -262,6 +286,7 @@ class Config:
         seeded = self._sanitize_loaded_config(raw_seed, folder_override=folder_path)
         seeded["file_list"] = []
         seeded["selected_files"] = []
+        seeded["file_values"] = {}
         seeded["display_file"] = ""
         self._safe_write_json(config_path, seeded)
         return config_path
@@ -369,6 +394,7 @@ class Config:
         self.folder_path = sanitized["folder_path"]
         self.file_list = sanitized["file_list"]
         self.selected_files = sanitized["selected_files"]
+        self.file_values = sanitized["file_values"]
         self.file_extensions = sanitized["file_extensions"]
         self.data_import_function = sanitized["data_import_function"]
         self.display_file = sanitized["display_file"] or (self.selected_files[0] if self.selected_files else "")
@@ -385,6 +411,7 @@ class Config:
             "folder_path": self.folder_path,
             "file_list": self.file_list,
             "selected_files": self.selected_files,
+            "file_values": self.file_values,
             "file_extensions": self.file_extensions,
             "display_file": self.display_file,
             "data_import_function": self.data_import_function
