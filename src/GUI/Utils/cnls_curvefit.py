@@ -20,16 +20,31 @@ try:
 except Exception:  # pragma: no cover - scipy expected in project env
     _HAS_SCIPY = False
 
-# Confidence level for the band (fit-curve confidence interval).
-CONF_LEVEL = 0.95
+# Default confidence level for the band (fit-curve confidence interval).  The
+# level is saved with every fit so different parameters can use different CIs.
+DEFAULT_CONF_LEVEL = 0.95
 
 
-def _t_value(dof):
-    """Two-sided t multiplier for CONF_LEVEL; falls back to normal z."""
+def _confidence_level(value, default=None):
+    """Return a valid fractional CI, or *default* when the value is invalid."""
+    try:
+        level = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not np.isfinite(level) or not 0.50 <= level <= 0.9999:
+        return default
+    return level
+
+
+def _t_value(dof, confidence_level=DEFAULT_CONF_LEVEL):
+    """Two-sided t multiplier for a fractional confidence level."""
     if dof is None or dof <= 0:
         return float("nan")
+    confidence_level = _confidence_level(confidence_level)
+    if confidence_level is None:
+        return float("nan")
     if _HAS_SCIPY:
-        return float(_student_t.ppf(0.5 + CONF_LEVEL / 2.0, dof))
+        return float(_student_t.ppf(0.5 + confidence_level / 2.0, dof))
     return 1.96
 
 
@@ -197,36 +212,41 @@ def _r_squared(y, yhat):
     return 1.0 - rss / tss
 
 
-def _fail(method, message):
+def _fail(method, message, confidence_level=DEFAULT_CONF_LEVEL):
     return {"ok": False, "method": method, "message": message,
-            "r2": float("nan"), "coeffs": ()}
+            "r2": float("nan"), "coeffs": (),
+            "confidence_level": confidence_level}
 
 
-def fit_parameter(x, y, method, degree=1):
+def fit_parameter(x, y, method, degree=1, confidence_level=DEFAULT_CONF_LEVEL):
     """Fit y vs x with the given method.
 
     Returns a result dict. Keys always present: ok, method, message, r2, coeffs.
     When ok, additional private keys support evaluate(): _kind and model state.
     """
+    confidence_level = _confidence_level(confidence_level)
+    if confidence_level is None:
+        return _fail(method, "confidence level must be between 50% and 99.99%", None)
+
     x, y = _clean_xy(x, y)
     n = len(x)
 
     if method == "Polynomial":
-        return _fit_polynomial(x, y, int(degree), n)
+        return _fit_polynomial(x, y, int(degree), n, confidence_level)
 
     if method not in _MODELS:
-        return _fail(method, f"unknown method '{method}'")
+        return _fail(method, f"unknown method '{method}'", confidence_level)
 
     if not _HAS_SCIPY:
-        return _fail(method, "scipy not available for nonlinear fit")
+        return _fail(method, "scipy not available for nonlinear fit", confidence_level)
 
     kind, model, p, req = _MODELS[method]
     if req == "positive" and np.any(x <= 0):
-        return _fail(method, "x must be > 0 for this method")
+        return _fail(method, "x must be > 0 for this method", confidence_level)
     if req == "nonneg" and np.any(x < 0):
-        return _fail(method, "x must be >= 0 for this method")
+        return _fail(method, "x must be >= 0 for this method", confidence_level)
     if n < p + 1:
-        return _fail(method, f"need >= {p + 1} points for {method}")
+        return _fail(method, f"need >= {p + 1} points for {method}", confidence_level)
 
     p0 = _initial_guess(kind, x, y)
     try:
@@ -234,20 +254,21 @@ def fit_parameter(x, y, method, degree=1):
             popt, pcov = curve_fit(model, x, y, p0=p0, maxfev=20000)
             yhat = model(x, *popt)
     except Exception as exc:
-        return _fail(method, f"fit did not converge ({type(exc).__name__})")
+        return _fail(method, f"fit did not converge ({type(exc).__name__})", confidence_level)
     if not np.all(np.isfinite(yhat)):
-        return _fail(method, "fit produced non-finite values")
+        return _fail(method, "fit produced non-finite values", confidence_level)
 
     return {"ok": True, "method": method, "message": "",
             "r2": _r_squared(y, yhat), "coeffs": tuple(float(c) for c in popt),
+            "confidence_level": confidence_level,
             "_kind": kind, "_popt": np.asarray(popt, float),
             "_pcov": np.asarray(pcov, float), "_dof": n - p}
 
 
-def _fit_polynomial(x, y, degree, n):
+def _fit_polynomial(x, y, degree, n, confidence_level):
     p = degree + 1
     if n < p + 1:
-        return _fail("Polynomial", f"need >= {p + 1} points for degree {degree}")
+        return _fail("Polynomial", f"need >= {p + 1} points for degree {degree}", confidence_level)
     try:
         X = np.vander(x, p)  # columns high -> low power
         beta, *_ = np.linalg.lstsq(X, y, rcond=None)
@@ -257,9 +278,10 @@ def _fit_polynomial(x, y, degree, n):
         sigma2 = rss / dof if dof > 0 else float("nan")
         cov = sigma2 * np.linalg.inv(X.T @ X)
     except np.linalg.LinAlgError:
-        return _fail("Polynomial", "singular fit (check x spread / degree)")
+        return _fail("Polynomial", "singular fit (check x spread / degree)", confidence_level)
     return {"ok": True, "method": "Polynomial", "message": "", "degree": degree,
             "r2": _r_squared(y, yhat), "coeffs": tuple(float(c) for c in beta),
+            "confidence_level": confidence_level,
             "_kind": "poly", "_beta": beta, "_cov": cov, "_dof": dof}
 
 
@@ -322,8 +344,8 @@ def _initial_guess(kind, x, y):
 def evaluate(result, x_new):
     """Return (yhat, y_lower, y_upper) arrays for x_new using a fit result.
 
-    y_lower/y_upper are the 95% confidence band of the fitted curve. For a
-    non-ok result, returns arrays of NaN.
+    y_lower/y_upper are the fit result's confidence band. For a non-ok result,
+    returns arrays of NaN.  Older result dictionaries default to 95%.
     """
     x_new = np.asarray(x_new, dtype=np.float64).reshape(-1)
     if not result.get("ok"):
@@ -331,7 +353,7 @@ def evaluate(result, x_new):
         return nan, nan.copy(), nan.copy()
 
     dof = result["_dof"]
-    t = _t_value(dof)
+    t = _t_value(dof, result.get("confidence_level", DEFAULT_CONF_LEVEL))
 
     with np.errstate(all="ignore"):
         if result["_kind"] == "poly":

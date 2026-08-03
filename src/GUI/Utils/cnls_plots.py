@@ -527,7 +527,10 @@ def update_all_plots(config):
                         if cf_x:
                             # Points only (no connecting line); x-axis = per-file x index.
                             dpg.add_scatter_series(x_index_list, data_list, parent=y_axis)
-                            fit = config.store.get('cf_fits', {}).get(param)
+                            # Fits are keyed by stable parameter index.  Only a
+                            # checked parameter may contribute a curve or CI band.
+                            setting = config.store.get('cf_parameter_settings', {}).get(para_idx, {})
+                            fit = config.store.get('cf_fits', {}).get(para_idx) if setting.get('selected') else None
                             if fit and fit.get('ok') and len(x_index_list) >= 2:
                                 x_lo, x_hi = min(x_index_list), max(x_index_list)
                                 if x_hi > x_lo:
@@ -539,7 +542,8 @@ def update_all_plots(config):
                                     # degenerate covariance yields a NaN band).
                                     if np.any(band_mask):
                                         xb = xs[band_mask]
-                                        shade = dpg.add_shade_series(xb.tolist(), yhi[band_mask].tolist(), y2=ylo[band_mask].tolist(), parent=y_axis, label="95% CI")
+                                        ci_label = f"{fit.get('confidence_level', 0.95) * 100:.2f}% CI"
+                                        shade = dpg.add_shade_series(xb.tolist(), yhi[band_mask].tolist(), y2=ylo[band_mask].tolist(), parent=y_axis, label=ci_label)
                                         dpg.bind_item_theme(shade, _cf_shade_theme())
                                         y_min_value = np.min([y_min_value, float(np.min(ylo[band_mask]))])
                                         y_max_value = np.max([y_max_value, float(np.max(yhi[band_mask]))])
