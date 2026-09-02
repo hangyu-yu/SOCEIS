@@ -306,7 +306,7 @@ def load_beckhoff_folder(folder_str: str) -> Optional[pd.DataFrame]:
                 )
 
             df = pd.read_csv(f, sep=";", skiprows=1, names=col_names,
-                             encoding="utf-8", engine="python")
+                             encoding="utf-8", engine="python", on_bad_lines="skip")
             all_data.append(df)
         except Exception as exc:
             print(f"[Beckhoff_view] Could not read {f.name}: {exc}")

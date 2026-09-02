@@ -343,6 +343,13 @@ EIS_PARAM_ORDER = [
 # Helpers
 # ===============================
 
+def _sync_multiselect_state(key: str, options: List[str]) -> None:
+    """Drop stale selections from a keyed multiselect's session_state when its
+    options change (e.g. after switching root folder), so the widget doesn't
+    crash and the still-valid part of the previous selection survives."""
+    if key in st.session_state:
+        st.session_state[key] = [v for v in st.session_state[key] if v in options]
+
 # ===============================
 # Color palette selection
 # ===============================
@@ -4053,13 +4060,16 @@ with st.sidebar:
 
    # ---- init palette choice BEFORE any read ----
     if "palette_choice" not in st.session_state:
-        st.session_state.palette_choice = "Default"
+        st.session_state.palette_choice = "Viridis (perceptual)"
 
     PALETTE_PREVIEW_N = 10  # keep preview squares fixed
 
     # ---- Initialize state ----
     if "selected_files" not in st.session_state:
         st.session_state.selected_files = []
+
+    # Drop selections that no longer exist under the (possibly new) root folder
+    _sync_multiselect_state("selected_files", list(display_map.keys()))
 
     st.markdown("### Select EIS files")
 
@@ -4187,10 +4197,12 @@ with st.sidebar:
     if cnls_fit_available:
         compare_options.append("CNLS Fit vs Truncated")
 
+    _sync_multiselect_state("nyquist_compare_selected", compare_options)
     nyquist_compare_selected = st.multiselect(
         "Compare",
         compare_options,
-        default=["Smooth vs Truncated"]
+        default=["Smooth vs Truncated"],
+        key="nyquist_compare_selected"
     )
 
     nyquist_show_params = st.checkbox("Parameters", value=False, key="nyq_params")
@@ -4242,7 +4254,8 @@ with st.sidebar:
         cnls_plot_modes = st.multiselect(
             "CNLS plot types",
             ["Bar plot", "Elements fitting", "CNLS compare"],
-            default=[]
+            default=[],
+            key="cnls_plot_modes_single"
         )
         cnls_line_selection = []
         cnls_heatmap_params = []
@@ -4251,7 +4264,8 @@ with st.sidebar:
         cnls_plot_modes = st.multiselect(
             "CNLS plot types",
             ["Heatmap", "Line plots", "CNLS compare"],
-            default=[]
+            default=[],
+            key="cnls_plot_modes_multi"
         )
         cnls_line_selection = []
         cnls_heatmap_params = (
@@ -4695,10 +4709,12 @@ if analyze_cnls:
 
             # Update selectable list dynamically
             if "Line plots" in cnls_plot_modes:
+                _sync_multiselect_state("cnls_line_selection", plotable_columns)
                 cnls_line_selection = st.multiselect(
                     "Select parameters to plot",
                     plotable_columns,
-                    default=plotable_columns
+                    default=plotable_columns,
+                    key="cnls_line_selection"
                 )
 
         # ---- Dynamic column ordering ----
@@ -4815,6 +4831,7 @@ if analyze_cnls:
                 if len(compare_candidates) == 1:
                     selected_labels = list(compare_label_map.keys())
                 else:
+                    _sync_multiselect_state("cnls_compare_files", list(compare_label_map.keys()))
                     selected_labels = st.multiselect(
                         "Select files",
                         list(compare_label_map.keys()),
